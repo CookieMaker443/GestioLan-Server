@@ -3,18 +3,21 @@ using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
 using GestioLan.API.Models;
 using Serilog;
 using System;
-using System.Text; // Per Encoding
-using Microsoft.AspNetCore.Authentication.JwtBearer; // Per JwtBearerDefaults
-using Microsoft.IdentityModel.Tokens; // Per TokenValidationParameters e SymmetricSecurityKey
-using GestioLan.API.Utils.JWT; // Per la classe JWT 
-using GestioLan.API.Utils.Helpers; // Per ICurrentUserService e CurrentUserService e middleware
-using GestioLan.API.Services.Categories; // Per ICategoryService e CategoryService
-using GestioLan.API.Services.Images; // Per IImageService e ImageService
-using GestioLan.API.Services.Users; // Per IUserService e UserService
-using GestioLan.API.Services.Items; // Per IItemService e ItemService
+using System.Text;                                      // Per Encoding
+using System.Threading.RateLimiting;                    // Per RateLimitPartition, FixedWindowRateLimiterOptions, QueueProcessingOrder
+using Microsoft.AspNetCore.RateLimiting;                // Per AddRateLimiter, UseRateLimiter
+using Microsoft.AspNetCore.Authentication.JwtBearer;    // Per JwtBearerDefaults
+using Microsoft.IdentityModel.Tokens;                   // Per TokenValidationParameters e SymmetricSecurityKey
+using GestioLan.API.Utils.JWT;                          // Per la classe JWT 
+using GestioLan.API.Utils.Helpers;                      // Per ICurrentUserService e CurrentUserService e middleware
+using GestioLan.API.Services.Categories;                // Per ICategoryService e CategoryService
+using GestioLan.API.Services.Images;                    // Per IImageService e ImageService
+using GestioLan.API.Services.Users;                     // Per IUserService e UserService
+using GestioLan.API.Services.Items;                     // Per IItemService e ItemService
 using GestioLan.API.Services.Metadata;
-using System.Reflection; // per l'assembly
-using Plugins.Shared; //per IMetadataProvider
+using System.Reflection;                                // per l'assembly
+using Plugins.Shared;                                   //per IMetadataProvider
+using GestioLan.API.Utils.Options;  // Per RateLimitingOptions
 
 
 
@@ -37,9 +40,9 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog(); // Dice all'API di usare Serilog
 
 
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer(); // qui si aggiunge la configurazione per Swagger/OpenAPI
+builder.Services.AddSwaggerGen();           // qui si aggiunge la configurazione per Swagger/OpenAPI
+builder.Services.AddControllers();          // qui si aggiunge la configurazione per i controller
 
 
 // --- Caricamento dei plugin dalla cartella ---
@@ -132,6 +135,7 @@ builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 // --- Connection String per il db ---
 var connectionString = builder.Configuration.GetConnectionString("GestioLANConnection");
 
+
 builder.Services.AddDbContext<GestioLanContext>(options =>
     options.UseMySql(connectionString,
         new MariaDbServerVersion(new Version(10, 11, 13))));
@@ -146,7 +150,7 @@ if (string.IsNullOrEmpty(jwtSecret))
 }
 else
 {
-    Console.WriteLine("JWT_SECRET is set.");
+    Log.Information("JWT_SECRET is set.");
 }
 
 var keyBytes = Encoding.ASCII.GetBytes(jwtSecret);
@@ -174,6 +178,43 @@ builder.Services.AddAuthorization(options =>
 });
 
 
+// --- qui si aggiunge la configurazione per il rate limiting ---
+var rl = builder.Configuration.GetSection("RateLimiting").Get<RateLimitingOptions>()
+         ?? new RateLimitingOptions();
+var window = TimeSpan.FromMinutes(rl.WindowMinutes);    // <-- finestra di tempo per il rate limiting
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Definisce la politica di rate limiting per le richieste generali (Default)
+    options.AddPolicy("Default", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() 
+                ?? "unknown",   // <-- Se non riesce a ottenere l'IP, usa "unknown" come chiave di partizione
+            factory: _ => new FixedWindowRateLimiterOptions     // <-- Configura il rate limiting
+            {
+                PermitLimit = rl.Default,
+                Window = window,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
+
+    options.AddPolicy("AI", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.User.Identity?.Name   // <-- Usa il nome dell'utente come chiave di partizione per le richieste AI
+                ?? context.Connection.RemoteIpAddress?.ToString()   // <-- Se non riesce a ottenere il nome dell'utente, usa l'IP
+                ?? "unknown",   // <-- Se non riesce a ottenere l'IP, usa "unknown" come chiave di partizione
+            factory: _ => new FixedWindowRateLimiterOptions     // <-- Configura il rate limiting
+            {
+                PermitLimit = rl.AI,
+                Window = window,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
+});
+
+
 // --- qui costruisce l'app con le configurazioni di prima e la esegue ---
 var app = builder.Build();
 
@@ -186,18 +227,18 @@ if (app.Environment.IsDevelopment())
 }
 
 
-// Fondamentale per far sì che l'API possa leggere/scrivere file 
+app.UseHttpsRedirection();  // Fondamentale per far sì che l'API possa leggere/scrivere file 
 app.UseStaticFiles();
+app.UseRouting();
+app.UseAuthentication();    // legge il JWT e popola il campo user
+app.UseRateLimiter();       // applica il rate limiting
+app.UseAuthorization();     // valida i permessi
+app.UseMiddleware<LogEnricherMiddleware>();             // esegue il middleware
+app.MapControllers().RequireRateLimiting("Default");    // esegue il controller e l'action, e assegna Default come politica di rate limiting
 
-app.UseHttpsRedirection();
-app.UseAuthentication(); // legge il JWT e popola il campo user
-app.UseAuthorization(); // // valida i permessi
-app.UseMiddleware<LogEnricherMiddleware>(); // esegue il middleware
-app.MapControllers(); // esegue il controller e l'action
-
-Console.WriteLine("C# API is running...");
-Console.WriteLine($"Using connection string: {connectionString}");
-Console.WriteLine($"Environment: {builder.Environment.EnvironmentName}");
+Log.Information("C# API is running...");
+Log.Information($"Using connection string: {connectionString}");
+Log.Information($"Environment: {builder.Environment.EnvironmentName}");
 
 
 // --- se in modalita developement, aggiorna il database con la rispettiva migrazione ---
@@ -215,15 +256,15 @@ if(app.Environment.IsDevelopment())
             // Se il DB non esiste, lo crea.
             if (context.Database.GetPendingMigrations().Any())
                 {
-                Console.WriteLine("Applicazione migrazioni in corso...");
+                Log.Information("Applicazione migrazioni in corso...");
                 context.Database.Migrate();
-                Console.WriteLine("Database aggiornato con successo!");
+                Log.Information("Database aggiornato con successo!");
             }
         }
         catch (Exception ex)
         {
             var logger = services.GetRequiredService<ILogger<Program>>();
-            logger.LogError(ex, "Si è verificato un errore durante la migrazione del database.");
+            Log.Error(ex, "Si è verificato un errore durante la migrazione del database.");
         }
     }
 }
