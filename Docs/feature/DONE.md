@@ -17,6 +17,7 @@
 - [X] aggiornare il docker compose che pulla le immagini, a pullare l immagine del database gia pronto (ancora da creare il container e da pubblicare)
 
 ## Immagini
+- [X] aggiungere controli sul file, verificare che sia un immagine .png, .jpg con i magic bytes
 - [X] creare in src/GestioLan.API/Plugins un interfaccia per crreare pi dei puligin per i vari provider esterni di immagini per le varie categorie usando il pattern `plugin`
 - [X] fare una migazione nella tabella category, aggiungere uno (o piu, da vedere) elementi NULLABILI che sono i link delle api che fungeranno da provider per quegli item (Aggiunto una stringa)
 - [X] se l'item ha un valore in "barcode" e ha una categoria associata ad un endpoint API per l'immagine, e l'utente manda un FLAG "TryFetchImage" (con o senza immagine dall'utente), il controller prova a fetchare l'immagine dall API
