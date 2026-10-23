@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using GestioLan.API.Services.Images;
 using Microsoft.AspNetCore.Authorization; // Per l'attributo [Authorize]
+using Microsoft.AspNetCore.StaticFiles;
 
 
 namespace GestioLan.API.Controllers;
@@ -10,12 +11,25 @@ namespace GestioLan.API.Controllers;
 public class ImagesController : ControllerBase
 {
     private readonly IImageService _imageService;
+    private static readonly FileExtensionContentTypeProvider ContentTypes = new();
  
     public ImagesController(IImageService imageService)
     {
         _imageService = imageService;
     }
 
+    // Per l'endpoint per nome: il nome file lo conosci già
+    private static string GetContentType(string fileName)
+        => ContentTypes.TryGetContentType(fileName, out var ct) ? ct : "application/octet-stream";
+
+    // Per l'endpoint per ID: deduce il tipo dai magic bytes
+    private static string DetectContentType(byte[] bytes)
+    {
+        byte[] png = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+        if (bytes.Length >= png.Length && bytes.AsSpan(0, png.Length).SequenceEqual(png))
+            return "image/png";
+        return "image/jpeg";
+    }
 
     [Authorize] // Protegge questo endpoint, richiede un token JWT valido per accedervi
     [HttpGet("AllImagesInfo")]
@@ -34,7 +48,7 @@ public class ImagesController : ControllerBase
         try
         {
             var imageBytes = await _imageService.GetImageByNameAsync(itemImageName);
-            return File(imageBytes, "image/jpeg"); // Il browser/client vedrà un file immagine
+            return File(imageBytes, GetContentType(itemImageName)); // Il browser/client vedrà un file immagine
         }
         catch (FileNotFoundException ex)
         {
@@ -50,7 +64,7 @@ public class ImagesController : ControllerBase
         try
         {
             var imageBytes = await _imageService.GetImageByIdAsync(idImage);
-            return File(imageBytes, "image/jpeg"); // Il browser/client vedrà un file immagine
+            return File(imageBytes, DetectContentType(imageBytes)); // Il browser/client vedrà un file immagine
         }
         catch (KeyNotFoundException ex)
         {
@@ -74,6 +88,8 @@ public class ImagesController : ControllerBase
 
     [Authorize] 
     [HttpPost("CreateImage")]
+    [RequestSizeLimit(10 * 1024 * 1024)]          // 10 MB sull'intera richiesta
+    [RequestFormLimits(MultipartBodyLengthLimit = 10 * 1024 * 1024)]
     public async Task<IActionResult> CreateIImage(string? itemName, IFormFile file)
     {
         try
@@ -91,6 +107,8 @@ public class ImagesController : ControllerBase
     // Modifica un immagine
     [Authorize] 
     [HttpPut("UpdateImage/{id}")]
+    [RequestSizeLimit(10 * 1024 * 1024)]          // 10 MB sull'intera richiesta
+    [RequestFormLimits(MultipartBodyLengthLimit = 10 * 1024 * 1024)]
     public async Task<IActionResult> UpdateImage(int id, string? itemName, IFormFile file)
     {
         try

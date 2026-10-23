@@ -160,7 +160,7 @@ public class CategoryService : ICategoryService
         }
 
         string oldName = catInDb.NameCategory;// Salva il vecchio nome per il messaggio di risposta
-        string ordColor = catInDb.CategoryColor;
+        string oldColor = catInDb.CategoryColor;
         catInDb.NameCategory = category.NameCategory;
         catInDb.CategoryColor = newColor;
 

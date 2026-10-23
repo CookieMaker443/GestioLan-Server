@@ -7,10 +7,6 @@ quando il container si genera, deve:
 - [ ] eliminare l'utente root, o dargli una password complessa (da valutare)
 
 
-## Immagini
-- [ ] aggiungere controli sul file, verificare che sia un immagine .png, .jpg con i magic bytes
-
-
 ## Utenti
 - [ ] Primo utente creato nel database sara root con password root, se nel db venissero eliminati tutti gli utentui, si creerebbe root in automatico
 register protetto da jwt

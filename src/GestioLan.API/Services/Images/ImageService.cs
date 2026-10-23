@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
 using GestioLan.API.Models;
 using GestioLan.API.Utils.Helpers; // Per la classe StringHelper e CurrentUserService
-using Serilog.Context;
 
 namespace GestioLan.API.Services.Images;
 
@@ -13,6 +12,12 @@ public class ImageService : IImageService
 
     private readonly string _itemsFolder;
 
+    private const long MaxPluginImageBytes = 10 * 1024 * 1024; // 10 MB
+
+    // Firme (magic bytes) dei formati ammessi
+    private static readonly byte[] PngSignature = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+    private static readonly byte[] JpegSignature = { 0xFF, 0xD8, 0xFF };
+
     public ImageService(GestioLanContext context, IConfiguration config, 
         ILogger<ImageService> logger)
     {
@@ -21,6 +26,9 @@ public class ImageService : IImageService
 
         _itemsFolder = config["Storage:ItemsPath"] ?? "/app/data/uploads/items";
     }
+
+
+
 
 
     // Restituisce la lista di tutte le immagini con le info base (IdImage, FileName, ItemsCount, LastModified)
@@ -40,6 +48,9 @@ public class ImageService : IImageService
         return images;
     }
 
+
+
+
     // Restituisce i byte dell'immagine cercandola per nome file
     // Lancia FileNotFoundException se il file non esiste su disco
     public async Task<byte[]> GetImageByNameAsync(string itemImageName)
@@ -48,7 +59,7 @@ public class ImageService : IImageService
         // Questo cercherà PRIMA nei User Secrets, poi nelle variabili d'ambiente, poi nel JSON
         // _itemsFolder
         _logger.LogInformation("Image requested by name: {ItemImageName}", itemImageName);
-        var filePath = Path.Combine(_itemsFolder, itemImageName);
+        var filePath = ResolveSafePath(itemImageName);
 
         // Controlla se il file esiste davvero
         if (!System.IO.File.Exists(filePath))
@@ -62,6 +73,9 @@ public class ImageService : IImageService
         _logger.LogInformation("Image {ItemImageName} served successfully", itemImageName);
         return imageBytes;        
     }
+
+
+
 
     // Restituisce i byte dell'immagine cercandola per ID nel database
     // Lancia KeyNotFoundException se il record non esiste
@@ -80,7 +94,7 @@ public class ImageService : IImageService
         }
         string itemImageName = image.FileName;
 
-        var filePath = Path.Combine(_itemsFolder, itemImageName);
+        var filePath = ResolveSafePath(image.FileName);
 
         // Controlla se il file esiste davvero
         if (!System.IO.File.Exists(filePath))
@@ -94,6 +108,9 @@ public class ImageService : IImageService
         _logger.LogInformation("Image with ID {IdImage} served successfully", idImage);
         return imageBytes;
     }
+
+
+
 
     // Restituisce la lista di immagini con ItemsCount <= qty
     public async Task<IEnumerable<object>> GetImagesByItemsCountAsync(int qty)
@@ -112,6 +129,9 @@ public class ImageService : IImageService
 
         return images;
     }
+
+
+
 
     // Carica una nuova immagine su disco e crea il record nel database
     // Restituisce il messaggio di conferma con il percorso
@@ -135,7 +155,7 @@ public class ImageService : IImageService
         }
 
         // Creazione del nome del file e il percorso completo
-        string fileName = await UploadImage(_itemsFolder, file, itemName ?? "unknown");
+        string fileName = await UploadImage(file, itemName ?? "unknown");
         _logger.LogInformation("Image saved to disk: {FileName}", fileName);
 
         // Creazione del record nel database
@@ -150,6 +170,9 @@ public class ImageService : IImageService
         return $"DONE: {fileName}";
     }
 
+
+
+
     // Sostituisce il file immagine su disco e aggiorna il record e gli Item collegati
     // Restituisce il messaggio di conferma
     // Lancia ArgumentException se il file è null o vuoto
@@ -159,7 +182,7 @@ public class ImageService : IImageService
         // Controlli generici:
         _logger.LogInformation("Updating image with ID: {Id}", id);
 
-        // Vede se l'utente ha inserito un immagine
+        // Vede se l'utente ha inserito qualcosa
         if (file == null || file.Length == 0)
         {
             _logger.LogWarning("File is null or empty for update of ID: {Id}", id);
@@ -181,23 +204,23 @@ public class ImageService : IImageService
             throw new KeyNotFoundException($"Cannot update image. Record with ID {id} does not exist.");
         }
 
+        // PRIMA salvo e valido il nuovo file: se è invalido lancia e il vecchio resta intatto
+        string newFileName = await UploadImage(file, itemName ?? "unknown");
+        _logger.LogInformation("New image saved to disk: {NewFileName}", newFileName);
+
         string itemImageName = imageRecord.FileName;
-        var filePath = Path.Combine(_itemsFolder, itemImageName);
+        var oldfilePath = ResolveSafePath(itemImageName);
 
         // cerca la vecchia immagine, controlla se il file esiste davvero, e nel caso lo elimina
-        if (System.IO.File.Exists(filePath))
+        if (System.IO.File.Exists(oldfilePath))
         {
-            System.IO.File.Delete(filePath);
-            Console.WriteLine("Deleted old image file: {filePath}", filePath);
+            System.IO.File.Delete(oldfilePath);
+            _logger.LogInformation("Deleted old image file: {filePath}", oldfilePath);
         }
         else
         {
-            _logger.LogWarning("Old image file not found on disk at: {filePath}", filePath);
+            _logger.LogWarning("Old image file not found on disk at: {filePath}", oldfilePath);
         }
-
-        // carica la nuova immagine e aggiorna il record
-        string newFileName = await UploadImage(_itemsFolder, file, itemName ?? "unknown");
-        _logger.LogInformation("New image saved to disk: {NewFileName}", newFileName);
 
         // salva il record con il nuovo nome dell'immagine
         imageRecord.FileName = newFileName;
@@ -219,6 +242,9 @@ public class ImageService : IImageService
         return "DONE";
     }
 
+
+
+
     // Rinomina il file immagine su disco e aggiorna il record e gli Item collegati
     // Restituisce il messaggio di conferma
     // Lancia KeyNotFoundException se il record non esiste
@@ -236,23 +262,25 @@ public class ImageService : IImageService
         }
 
         string oldFileName = imageRecord.FileName;
-        var oldFilePath = Path.Combine(_itemsFolder, oldFileName);
+        var oldFilePath = ResolveSafePath(oldFileName);
 
-        string newFileName = GenerateUniqueFilename(itemName ?? "unknown"); // genera un nuovo nome basato sull'itemName o "unknown" se itemName è null o vuoto
-        var newFilePath = Path.Combine(_itemsFolder, newFileName);
+        // mantengo l'estensione reale del file, invece di forzare .jpg
+        var extension = Path.GetExtension(imageRecord.FileName);
 
-        if (System.IO.File.Exists(oldFilePath))
-        {
-            System.IO.File.Move(oldFilePath, newFilePath);
-            _logger.LogWarning("Image record with ID {Id} not found in DB", id);
-            imageRecord.FileName = newFileName;
-            //_context.Images.Update(imageRecord);
-        }
-        else
+
+        string newFileName = GenerateUniqueFilename(itemName ?? "unknown", extension); // genera un nuovo nome basato sull'itemName o "unknown" se itemName è null o vuoto
+        var newFilePath = ResolveSafePath(newFileName);
+
+        if (!System.IO.File.Exists(oldFilePath))
         {
             _logger.LogWarning("File to rename not found on disk: {OldFilePath}", oldFilePath);
-            throw new FileNotFoundException($"file da rinominare non trovato: {oldFilePath}");
+            throw new FileNotFoundException("file da rinominare non trovato");
         }
+
+        System.IO.File.Move(oldFilePath, newFilePath);  // lancia IOException se la destinazione esiste
+        imageRecord.FileName = newFileName;
+        //_context.Images.Update(imageRecord);
+       
 
         // OPZIONALE: cercare ogni item con idImage = a questo e aggiornare il nome immagine
         var itemsWithThisImage = await _context.Items.Where(item => item.IdImage == id).ToListAsync();
@@ -270,6 +298,9 @@ public class ImageService : IImageService
         return "DONE";
     }
 
+
+
+
     // Elimina il file immagine su disco, rimuove il record e azzera i riferimenti negli Item
     // Restituisce il messaggio di conferma
     // Lancia KeyNotFoundException se il record non esiste
@@ -286,17 +317,8 @@ public class ImageService : IImageService
         }
 
         string itemImageName = imageRecord.FileName;
-        var filePath = Path.Combine(_itemsFolder, itemImageName);
-        if (System.IO.File.Exists(filePath))
-        {
-            System.IO.File.Delete(filePath);
-            _logger.LogInformation("Deleted image file: {FilePath}", filePath);
-
-        }
-        else
-        {
-            _logger.LogWarning("Image file not found on disk, skipping file deletion: {FilePath}", filePath);
-        }
+        var filePath = ResolveSafePath(itemImageName);  // viene eliminato dopo la rimozione dal database
+        
 
         // elimina ogni riferimento a questa immagine negli item (id_image = null)
         var itemsWithThisImage = await _context.Items.Where(item => item.IdImage == id).ToListAsync();
@@ -313,15 +335,30 @@ public class ImageService : IImageService
         _context.Images.Remove(imageRecord);
         await _context.SaveChangesAsync();
 
+        // elimina il file fisico, al assimo rimane un file orfano
+        if (System.IO.File.Exists(filePath))
+        {
+            System.IO.File.Delete(filePath);
+            _logger.LogInformation("Deleted image file: {FilePath}", filePath);
+
+        }
+        else
+        {
+            _logger.LogWarning("Image file not found on disk, skipping file deletion: {FilePath}", filePath);
+        }
+
         _logger.LogInformation("Image with ID {Id} deleted successfully", id);
         return "DONE";
     }
+
+
+
 
     // Salva un'immagine da uno Stream (usato dai plugin del MetadataService, non dal controller)
     // Restituisce l'IdImage del record creato nel DB
     public async Task<int> SaveImageFromStreamAsync(Stream imageStream, string suggestedExtension, string? itemName )
     {
-        _logger.LogInformation("Saving image from stream for item: {ItemName}, extension: {Extension}", itemName ?? "unknown", suggestedExtension ?? ".jpg");
+        _logger.LogInformation("Saving image from stream for item: {ItemName}", itemName ?? "unknown");
 
         if (!Directory.Exists(_itemsFolder))
         {
@@ -329,18 +366,36 @@ public class ImageService : IImageService
             _logger.LogInformation("Created missing target directory: {ItemsFolder}", _itemsFolder);
         }
 
+        // Copio in memoria con un limite di dimensione (gli stream HTTP non sono seekable)
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int n;
+        while ((n = await imageStream.ReadAsync(chunk)) > 0)
+        {
+            if (buffer.Length + n > MaxPluginImageBytes)
+                throw new ArgumentException("Image from plugin is too large");
+            buffer.Write(chunk, 0, n);
+        }
+        buffer.Position = 0;
+
+        // L'estensione suggerita dal plugin NON si usa: conta solo quella rilevata dai magic bytes
+        var extension = await DetectImageExtensionAsync(buffer);
+        if (extension == null)
+        {
+            _logger.LogWarning("Rejected plugin image for item {ItemName}: invalid magic bytes", itemName ?? "unknown");
+            throw new ArgumentException("Invalid image from plugin");
+        }
 
         // Riusa GenerateUniqueFilename per coerenza — se itemName è null usa "unknown"
-        // Poi sostituisce l'estensione con quella suggerita dal plugin (es. ".png", ".webp")
-        string fileName = GenerateUniqueFilename(itemName ?? "unknown", suggestedExtension ?? ".jpg");           // es. "aB3xKq1z_coca_cola.jpg"
+        string fileName = GenerateUniqueFilename(itemName ?? "unknown", extension);           // es. "aB3xKq1z_coca_cola.jpg"
 
-        var filePath = Path.Combine(_itemsFolder, fileName);
+        var filePath = ResolveSafePath(fileName);
 
-        using (var fileStream = new FileStream(filePath, FileMode.Create))
+        await using (var fileStream = new FileStream(filePath, FileMode.CreateNew))
         {
-            await imageStream.CopyToAsync(fileStream);
-            _logger.LogInformation("Plugin image saved to disk: {FilePath}", filePath);
+            await buffer.CopyToAsync(fileStream);
         }
+        _logger.LogInformation("Plugin image saved to disk");
 
         var newImage = new Image { FileName = fileName };
         _context.Images.Add(newImage);
@@ -350,29 +405,93 @@ public class ImageService : IImageService
         return newImage.IdImage;
     }
 
+
+
+
     // --- Metodi privati di supporto ---
 
-    private async Task<string> UploadImage(string baseFolder, IFormFile file, string itemName = "unknown")
+    private async Task<string> UploadImage(IFormFile file, string itemName = "unknown")
     {
-        var fileName = GenerateUniqueFilename(itemName); // Genera un nome unico basato sull'itemName
-        var newFilePath = Path.Combine(baseFolder, fileName);
+        await using var input = file.OpenReadStream();
 
-        // Salviamo il file fisicamente (sovrascrive se esiste già)
-        using (var stream = new FileStream(newFilePath, FileMode.Create))
+        // verifica che il file sia effettivamente un immagine coi magic bytes
+        var extension = await DetectImageExtensionAsync(input);
+        if (extension == null)
         {
-            await file.CopyToAsync(stream);
-           _logger.LogInformation("File uploaded to: {BaseFolder}/{FileName}", baseFolder, fileName);
+            _logger.LogWarning("Rejected file '{OriginalName}': invalid magic bytes", file.FileName);
+            throw new ArgumentException("Invalid file: only real .png and .jpg images are allowed");
+        }
+
+        if (file.Length > MaxPluginImageBytes)
+        {
+            _logger.LogWarning("Rejected file '{OriginalName}': File too large", file.FileName);
+            throw new ArgumentException("File too large (max 10 MB)");
+        }
+
+        var fileName = GenerateUniqueFilename(itemName, extension); // Genera un nome unico basato sull'itemName
+        var newFilePath = ResolveSafePath(fileName);
+
+        await using (var stream = new FileStream(newFilePath, FileMode.CreateNew)) // CreateNew crea un immagine e se trova una collisione genera un errore e non sovrascirve
+        {
+            await input.CopyToAsync(stream);
+           _logger.LogInformation("File uploaded to: {FileName}", fileName);
         }
 
         return fileName;
     }
 
+
+
+
     private string GenerateUniqueFilename(string itemName = "unknown", string extension = ".jpg")
     {
-        string itemNameSanitized = itemName.Replace(" ", "_"); // Sostituisce gli spazi con underscore
-        string randStr = StringHelper.GenerateRandomString(8); // Genera una stringa casuale per evitare conflitti di nome
-        var fileName = $"{randStr}_{itemNameSanitized}{extension}"; // Forziamo .jpg come deciso
+        var safe = string.Concat(itemName.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or ' '))
+            .Replace(" ", "_");     // Sostituisce gli spazi con underscore
+
+        if (safe.Length > 50) safe = safe[..50];    
+        if (safe.Length == 0) safe = "unknown";
+
+        // Genera una stringa casuale per evitare conflitti di nome
+        var fileName = $"{StringHelper.GenerateRandomString(8)}_{safe}{extension}";
         _logger.LogDebug("Generated unique filename: {FileName}", fileName);
         return fileName;
+    }
+
+
+
+
+
+    // Legge i primi byte dello stream e restituisce l'estensione reale (".png" / ".jpg"),
+    // oppure null se non è un'immagine supportata. Riporta lo stream all'inizio.
+    private static async Task<string?> DetectImageExtensionAsync(Stream stream)
+    {
+        var header = new byte[8];
+        // legge i primi 8 byte (ReadAtLeastAsync esiste da .NET 7+)
+        int read = await stream.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false);
+        stream.Position = 0; // fondamentale: altrimenti CopyToAsync copia il file "senza testa"
+
+        if (read >= PngSignature.Length && header.AsSpan(0, PngSignature.Length).SequenceEqual(PngSignature))
+            return ".png";
+
+        if (read >= JpegSignature.Length && header.AsSpan(0, JpegSignature.Length).SequenceEqual(JpegSignature))
+            return ".jpg";
+
+        return null;
+    }
+
+
+
+    // helper per pulire path anomali (per evitare Path traversal)
+    private string ResolveSafePath(string fileName)
+    {
+        var safeName = Path.GetFileName(fileName);
+        var fullPath = Path.GetFullPath(Path.Combine(_itemsFolder, safeName));
+        var root = Path.GetFullPath(_itemsFolder) + Path.DirectorySeparatorChar;
+
+        // difesa in profondità: il risultato deve stare dentro la cartella
+        if (!fullPath.StartsWith(root, StringComparison.Ordinal))
+            throw new FileNotFoundException("Not Found!");
+
+        return fullPath;
     }
 }

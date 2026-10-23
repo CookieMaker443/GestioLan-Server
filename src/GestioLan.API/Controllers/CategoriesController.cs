@@ -39,8 +39,8 @@ public class CategoriesController : ControllerBase
 
         try
         {
-            var category = await _categoryService.AddCategoryAsync(category.NameCategory, category.CategoryColor);
-            return Ok(category);
+            var created = await _categoryService.AddCategoryAsync(category.NameCategory, category.CategoryColor);
+            return Ok(created);
         }
         catch (ArgumentException ex)
         {
