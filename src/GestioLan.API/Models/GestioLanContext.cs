@@ -24,6 +24,8 @@ public partial class GestioLanContext : DbContext
 
     public virtual DbSet<Image> Images { get; set; }
 
+    public virtual DbSet<QuantityUnit> QuantityUnits { get; set; }
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (!optionsBuilder.IsConfigured)
@@ -36,7 +38,7 @@ public partial class GestioLanContext : DbContext
     {
         modelBuilder
             .UseCollation("utf8mb4_unicode_ci")
-            .HasCharSet("utf8mb4");
+            .HasCharSet("utf8mb4");                 // Imposta la codifica dei caratteri a UTF-8 per supportare emoji e caratteri speciali
 
         modelBuilder.Entity<Category>(entity =>
         {
@@ -45,13 +47,24 @@ public partial class GestioLanContext : DbContext
             entity.ToTable("category");
 
             // Conrolla che id_category sia una potenza di 2 (1, 2, 4, 8, 16, 32)
-            entity.ToTable(t => t.HasCheckConstraint("CK_Category_Bitmask", "(id_category > 0) AND (id_category & (id_category - 1) = 0)"));
+            entity.ToTable(t => 
+            {
+                t.HasCheckConstraint("CK_Category_Bitmask", "(id_category > 0) AND (id_category & (id_category - 1) = 0)");
 
-            entity.HasIndex(e => e.NameCategory, "nome_categoria_UNIQUE").IsUnique();
+                t.HasCheckConstraint("CK_Category_Color", "category_color REGEXP '^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$'");
+            });
 
             entity.Property(e => e.IdCategory)
                 .ValueGeneratedNever()
                 .HasColumnName("id_category");
+
+            entity.HasIndex(e => e.NameCategory, "nome_categoria_UNIQUE").IsUnique();
+
+            entity.Property(e => e.CategoryColor)
+                .HasMaxLength(9)              // #RRGGBB, oppure #RRGGBBAA con l'alpha
+                .HasDefaultValue("#FFFFFF")
+                .HasColumnName("category_color");
+
             entity.Property(e => e.NameCategory)
                 .HasMaxLength(100)
                 .HasColumnName("name_category");
@@ -80,9 +93,26 @@ public partial class GestioLanContext : DbContext
                 .HasColumnName("id_category");
             entity.Property(e => e.Quantity)
                 .HasColumnName("quantity");
-            entity.Property(e => e.TypeQuantity)
-                .HasMaxLength(45)
-                .HasColumnName("type_quantity");
+            entity.Property(e => e.IdQuantityUnit)
+                .HasColumnName("id_quantity_unit");
+
+            // Definisce la relazione tra Item e QuantityUnit
+            entity.HasOne(e => e.QuantityUnit)
+                .WithMany()                             // senza collection inversa
+                .HasForeignKey(e => e.IdQuantityUnit)   // chiave esterna   
+                .OnDelete(DeleteBehavior.Restrict);     // comportamento di eliminazione: non permettere la cancellazione se ci sono Item associati
+        });
+
+        modelBuilder.Entity<QuantityUnit>(entity =>
+        {
+            entity.ToTable("quantity_units");
+            entity.HasKey(e => e.IdQuantityUnit);
+
+            entity.Property(e => e.IdQuantityUnit).HasColumnName("id_quantity_unit");
+            entity.Property(e => e.Name).HasMaxLength(45).IsRequired().HasColumnName("name");
+            entity.Property(e => e.Symbol).HasMaxLength(16).IsRequired().HasColumnName("symbol");
+
+            entity.HasIndex(e => e.Name).IsUnique();
         });
 
         modelBuilder.Entity<User>(entity =>

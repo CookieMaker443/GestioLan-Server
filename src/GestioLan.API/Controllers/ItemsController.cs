@@ -27,10 +27,10 @@ public class ItemsController : ControllerBase
         [FromQuery] string? name,
         [FromQuery] bool? has_image,
         [FromQuery] int? quantity,
-        [FromQuery] string? type_quantity
+        [FromQuery] int? id_quantity_unit
         )
     {
-        var items = await _itemService.GetItemsAsync(has_category, id_category, name, has_image, quantity, type_quantity);
+        var items = await _itemService.GetItemsAsync(has_category, id_category, name, has_image, quantity, id_quantity_unit);
         return Ok(items);
     }
 
@@ -56,8 +56,15 @@ public class ItemsController : ControllerBase
     [HttpPost("CreateItem")]
     public async Task<ActionResult<IEnumerable<Item>>> PostItem([FromBody] Item item)
     {
-        var createdItem = await _itemService.CreateItemAsync(item);
-        return CreatedAtAction(nameof(GetItem), new { id = createdItem.IdItem }, createdItem);
+        try
+        {
+            var createdItem = await _itemService.CreateItemAsync(item);
+            return CreatedAtAction(nameof(GetItem), new { id = createdItem.IdItem }, createdItem);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
 

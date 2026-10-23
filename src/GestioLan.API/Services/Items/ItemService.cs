@@ -31,12 +31,13 @@ public class ItemService : IItemService
         string? name,
         bool? has_image,
         int? quantity,
-        string? type_quantity)
+        int? id_quantity_unit)
     {
-        _logger.LogInformation("Retrieving items with filters: has_category={HasCategory}, id_category={IdCategory}, name={Name}, has_image={HasImage}, quantity={Quantity}, type_quantity={TypeQuantity}",
-            has_category, id_category, name, has_image, quantity, type_quantity);
+        _logger.LogInformation("Retrieving items with filters: has_category={HasCategory}, id_category={IdCategory}, name={Name}, has_image={HasImage}, quantity={Quantity}, id_quantity_unit={IdQuantityUnit}",
+            has_category, id_category, name, has_image, quantity, id_quantity_unit);
 
-        IQueryable<Item> query = _context.Items;
+        IQueryable<Item> query = _context.Items
+            .Include(i => i.QuantityUnit); // include QuantityUnit per evitare query aggiuntive quando si accede a questa proprietà
 
         if (has_category.HasValue)
         {
@@ -70,8 +71,8 @@ public class ItemService : IItemService
         if (quantity.HasValue)
             query = query.Where(item => item.Quantity == quantity.Value);
 
-        if (!string.IsNullOrEmpty(type_quantity))
-            query = query.Where(item => item.TypeQuantity == type_quantity);
+        if (id_quantity_unit.HasValue)
+            query = query.Where(item => item.IdQuantityUnit == id_quantity_unit.Value);
 
         var items = await query.ToListAsync();
         _logger.LogInformation("Returned {Count} items", items.Count);
@@ -84,7 +85,9 @@ public class ItemService : IItemService
     {
         _logger.LogInformation("Retrieving item with ID: {Id}", id);
 
-        var item = await _context.Items.FindAsync(id);
+        var item = await _context.Items
+                .Include(i => i.QuantityUnit)               // include QuantityUnit per evitare query aggiuntive quando si accede a questa proprietà
+                .FirstOrDefaultAsync(i => i.IdItem == id);
 
         if (item == null){
             _logger.LogWarning("Item with ID {Id} not found", id);
@@ -97,6 +100,20 @@ public class ItemService : IItemService
     // Crea un nuovo oggetto nel DB
     public async Task<Item> CreateItemAsync(Item item)
     {
+        _logger.LogInformation("Creating new item: {ItemName}, Barcode: {Barcode}", item.ItemName ?? "unknown", item.Barcode ?? "none");
+        
+        // BLOCCO TIPO DI QUANTITA
+
+
+        // controlla subito se l'unità di misura è valida, se non lo è lancia un'eccezione
+        item.QuantityUnit = null;
+        if (item.IdQuantityUnit != null &&
+            !await _context.QuantityUnits.AnyAsync(u => u.IdQuantityUnit == item.IdQuantityUnit))
+            {
+                _logger.LogWarning("Invalid QuantityUnit ID {IdQuantityUnit} for item creation", item.IdQuantityUnit);
+                throw new ArgumentException("Unità di misura non valida");
+            }
+
 
         // BLOCCO NOME 
         // nome assente OPPURE override → tenta fetch
@@ -106,7 +123,6 @@ public class ItemService : IItemService
         //      0      |    1    →  Sì
         //      1      |    0    →  No
         //      1      |    1    →  Sì   (override sovrascrive)
-        _logger.LogInformation("Creating new item: {ItemName}, Barcode: {Barcode}", item.ItemName ?? "unknown", item.Barcode ?? "none");
 
         bool nomeAssente = string.IsNullOrWhiteSpace(item.ItemName);
         bool tentaFetchNome = !string.IsNullOrEmpty(item.Barcode)
@@ -276,6 +292,9 @@ public class ItemService : IItemService
         _context.Items.Add(item);
         await _context.SaveChangesAsync();
 
+        // Carica la proprietà di navigazione QuantityUnit per evitare query aggiuntive quando si accede a questa proprietà, e la restituisce come risposta
+        await _context.Entry(item).Reference(i => i.QuantityUnit).LoadAsync();
+
         _logger.LogInformation("Item created successfully with ID: {IdItem}, Name: {ItemName}", item.IdItem, item.ItemName);
         return item;
     }
@@ -323,13 +342,20 @@ public class ItemService : IItemService
             throw new KeyNotFoundException($"Item wit id {id} not founf");
         }
 
+        if(updatedItem.IdQuantityUnit != null &&
+            !await _context.QuantityUnits.AnyAsync(u => u.IdQuantityUnit == updatedItem.IdQuantityUnit))
+            {
+                _logger.LogWarning("Invalid QuantityUnit ID {IdQuantityUnit} for item update", updatedItem.IdQuantityUnit);
+                throw new ArgumentException("Unità di misura non valida");
+            }
+
 
         item.ItemName = updatedItem.ItemName;
         item.Description = updatedItem.Description;
 
         item.IdCategory = updatedItem.IdCategory;
         item.Quantity = updatedItem.Quantity;
-        item.TypeQuantity = updatedItem.TypeQuantity;
+        item.IdQuantityUnit = updatedItem.IdQuantityUnit;
 
         // se il vecchio e nuovo item sono senza immagine, "pulisce" i campi immagine e non fa nulla
         if ((item.IdImage != updatedItem.IdImage) && updatedItem.IdImage != null)

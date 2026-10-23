@@ -19,7 +19,9 @@ public partial class Item
 
     public int Quantity { get; set; }
 
-    public string? TypeQuantity { get; set; }
+    public int? IdQuantityUnit { get; set; }
+    
+    public QuantityUnit? QuantityUnit { get; set; }
 
     public string? Barcode { get; set; }
 }

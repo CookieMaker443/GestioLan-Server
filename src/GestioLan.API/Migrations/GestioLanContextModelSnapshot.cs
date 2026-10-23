@@ -17,11 +17,11 @@ namespace GestioLan.API.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .UseCollation("armscii8_general_ci")
+                .UseCollation("utf8mb4_unicode_ci")
                 .HasAnnotation("ProductVersion", "9.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
-            MySqlModelBuilderExtensions.HasCharSet(modelBuilder, "armscii8");
+            MySqlModelBuilderExtensions.HasCharSet(modelBuilder, "utf8mb4");
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
             modelBuilder.Entity("GestioLan.API.Models.Category", b =>
@@ -32,6 +32,14 @@ namespace GestioLan.API.Migrations
 
                     b.Property<string>("AssociatedProviderName")
                         .HasColumnType("longtext");
+
+                    b.Property<string>("CategoryColor")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(9)
+                        .HasColumnType("varchar(9)")
+                        .HasDefaultValue("#FFFFFF")
+                        .HasColumnName("category_color");
 
                     b.Property<string>("NameCategory")
                         .IsRequired()
@@ -48,6 +56,8 @@ namespace GestioLan.API.Migrations
                     b.ToTable("category", null, t =>
                         {
                             t.HasCheckConstraint("CK_Category_Bitmask", "(id_category > 0) AND (id_category & (id_category - 1) = 0)");
+
+                            t.HasCheckConstraint("CK_Category_Color", "category_color REGEXP '^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$'");
                         });
                 });
 
@@ -107,6 +117,10 @@ namespace GestioLan.API.Migrations
                         .HasColumnType("int")
                         .HasColumnName("id_image");
 
+                    b.Property<int?>("IdQuantityUnit")
+                        .HasColumnType("int")
+                        .HasColumnName("id_quantity_unit");
+
                     b.Property<string>("ImageName")
                         .HasMaxLength(64)
                         .HasColumnType("varchar(64)")
@@ -122,15 +136,41 @@ namespace GestioLan.API.Migrations
                         .HasColumnType("int")
                         .HasColumnName("quantity");
 
-                    b.Property<string>("TypeQuantity")
-                        .HasMaxLength(45)
-                        .HasColumnType("varchar(45)")
-                        .HasColumnName("type_quantity");
-
                     b.HasKey("IdItem")
                         .HasName("PRIMARY");
 
+                    b.HasIndex("IdQuantityUnit");
+
                     b.ToTable("items", (string)null);
+                });
+
+            modelBuilder.Entity("GestioLan.API.Models.QuantityUnit", b =>
+                {
+                    b.Property<int>("IdQuantityUnit")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("id_quantity_unit");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("IdQuantityUnit"));
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(45)
+                        .HasColumnType("varchar(45)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)")
+                        .HasColumnName("symbol");
+
+                    b.HasKey("IdQuantityUnit");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("quantity_units", (string)null);
                 });
 
             modelBuilder.Entity("GestioLan.API.Models.User", b =>
@@ -163,6 +203,16 @@ namespace GestioLan.API.Migrations
                     b.HasKey("Username");
 
                     b.ToTable("user", (string)null);
+                });
+
+            modelBuilder.Entity("GestioLan.API.Models.Item", b =>
+                {
+                    b.HasOne("GestioLan.API.Models.QuantityUnit", "QuantityUnit")
+                        .WithMany()
+                        .HasForeignKey("IdQuantityUnit")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("QuantityUnit");
                 });
 #pragma warning restore 612, 618
         }

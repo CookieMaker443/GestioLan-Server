@@ -11,7 +11,7 @@ public interface IItemService
         string? name,
         bool? has_image,
         int? quantity,
-        string? type_quantity
+        int? id_quantity_unit
     );
 
     // Ottiene un singolo oggetto del DB tramite il suo ID

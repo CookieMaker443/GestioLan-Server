@@ -7,5 +7,7 @@ public partial class Category
 {
     public int IdCategory { get; set; }
     public string NameCategory { get; set; } = null!;
+
+    public string CategoryColor { get; set; } = "#FFFFFF";
     public string? AssociatedProviderName { get; set; }
 }
