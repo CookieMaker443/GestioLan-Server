@@ -26,13 +26,20 @@ ConnectionStrings__seq=http://seq:5341 # oppure protocollo http://[ip]:[porta]
 SEQ_FIRSTRUN_ADMINPASSWORD=password # username = admin
 
 # AI
-AI__Provider=ollama
-AI__Endpoint=http://ollama:11434
-AI__Model=llama3
-AI__McpEndpoint=http://gestiolan-mcp:5100
-AI__ApiKey=I_love_m&m's
+Provider=ollama
+Endpoint=http://ollama:11434
+Model=llama3
+McpEndpoint=http://gestiolan-mcp:5100
+ApiKey=I_love_m&m's
 
 # Rate Limiting
-RateLimiting__Default=100
-RateLimiting__AI=1
-RateLimiting__WindowMinutes=1
+Default=100
+AI=1
+WindowMinutes=1
+
+# Reverse Proxy
+# ReverseProxy__Enabled=true
+# ReverseProxy__KnownProxies__0=172.18.0.2
+# ReverseProxy__KnownNetworks__0=172.18.0.0/16
+# ReverseProxy__KnownNetworks__1=10.0.0.0/24
+#Per un array si usano gli indici __0, __1, __2... Se hai due reti, queste meglio scriverle nel compose

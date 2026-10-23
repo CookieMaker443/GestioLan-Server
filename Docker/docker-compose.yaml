@@ -47,6 +47,25 @@ services:
       - ConnectionStrings__GestioLANConnection=Server=GestioLan.Database;Port=3306;Database=${DB_NAME};User Id=${DB_USERNAME};Password=${DB_PASSWORD};SslMode=none;
       - ConnectionStrings__seq=${ConnectionStrings__seq} # se sono entrambi nella stessa rete docker ,allora http://{nome_servizio}:{porta}
 
+      # AI
+      # - AI__Provider=${Provider}
+      # - AI__Endpoint=${Endpoint}
+      # - AI__Model=${Model}
+      # - AI__McpEndpoint=${McpEndpoint}
+      # - AI__ApiKey=${ApiKey}
+
+      # Rate Limiting
+      - RateLimiting__Default=${Default}
+      - RateLimiting__AI=${AI}
+      - RateLimiting__WindowMinutes=${indowMinutes}
+
+      # Reverse Proxy
+      - ReverseProxy__Enabled=false
+      - ReverseProxy__KnownProxies=172.18.0.2
+      # - ReverseProxy__KnownNetworks__0=172.18.0.0/16
+      # - ReverseProxy__KnownNetworks__1=10.0.0.0/24
+      #Per un array si usano gli indici __0, __1, __2... Se hai due reti:
+
       - ASPNETCORE_ENVIRONMENT=Development # Per ora teniamo Development per vedere gli errori
     volumes:
       - type: bind

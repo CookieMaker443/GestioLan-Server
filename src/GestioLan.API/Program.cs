@@ -3,8 +3,10 @@ using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
 using GestioLan.API.Models;
 using Serilog;
 using System;
+using System.Net;                                       // IPAddress
 using System.Text;                                      // Per Encoding
 using System.Threading.RateLimiting;                    // Per RateLimitPartition, FixedWindowRateLimiterOptions, QueueProcessingOrder
+using Microsoft.AspNetCore.HttpOverrides;               // ForwardedHeaders, ForwardedHeadersOptions
 using Microsoft.AspNetCore.RateLimiting;                // Per AddRateLimiter, UseRateLimiter
 using Microsoft.AspNetCore.Authentication.JwtBearer;    // Per JwtBearerDefaults
 using Microsoft.IdentityModel.Tokens;                   // Per TokenValidationParameters e SymmetricSecurityKey
@@ -17,7 +19,7 @@ using GestioLan.API.Services.Items;                     // Per IItemService e It
 using GestioLan.API.Services.Metadata;
 using System.Reflection;                                // per l'assembly
 using Plugins.Shared;                                   //per IMetadataProvider
-using GestioLan.API.Utils.Options;  // Per RateLimitingOptions
+using GestioLan.API.Utils.Options;                      // Per RateLimitingOptions e ReverseProxyOptions
 
 
 
@@ -215,9 +217,44 @@ builder.Services.AddRateLimiter(options =>
 });
 
 
+// --- qui si aggiunge la configurazione per il reverse proxy ---
+var proxy = builder.Configuration.GetSection("ReverseProxy").Get<ReverseProxyOptions>() // inserisce la sezione ReverseProxy del file di configurazione in un oggetto ReverseProxyOptions
+            ?? new ReverseProxyOptions();   // se non esiste la sezione, crea un oggetto vuoto con valori di default
+
+if (proxy.Enabled)
+{
+    // registra il middleware per i reverse proxy e salva le impostazioni di proxy in ForwardedHeadersOptions
+    builder.Services.Configure<ForwardedHeadersOptions>(o =>
+    {
+        // Configura quali intestazioni proxy devono essere considerate (legge gli headerX-Forwarded-For e X-Forwarded-Proto)
+        o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+        // di default sono già presenti localhost: li svuotiamo per dichiarare i nostri
+        o.KnownNetworks.Clear();
+        o.KnownProxies.Clear();
+
+        // Aggiunge gli IP dei proxy conosciuti e le reti conosciute dalle impostazioni di configurazione 
+        foreach (var ip in proxy.KnownProxies)
+            o.KnownProxies.Add(IPAddress.Parse(ip));
+
+        foreach (var net in proxy.KnownNetworks)
+        {
+            var parts = net.Split('/');
+            o.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(
+                IPAddress.Parse(parts[0]), int.Parse(parts[1])));
+        }
+    });
+}
+
+
 // --- qui costruisce l'app con le configurazioni di prima e la esegue ---
 var app = builder.Build();
 
+// --- se il reverse proxy è abilitato, usa il middleware per leggere gli header X-Forwarded-For e X-Forwarded-Proto
+if (proxy.Enabled)
+    app.UseForwardedHeaders();
+
+Log.Information($"Proxy enabled: {proxy.Enabled}");
 
 // --- Configure the HTTP request pipeline. per swagger in velopement ---
 if (app.Environment.IsDevelopment())
@@ -227,8 +264,8 @@ if (app.Environment.IsDevelopment())
 }
 
 
-app.UseHttpsRedirection();  // Fondamentale per far sì che l'API possa leggere/scrivere file 
-app.UseStaticFiles();
+app.UseHttpsRedirection();  
+app.UseStaticFiles();       // Fondamentale per far sì che l'API possa leggere/scrivere file 
 app.UseRouting();
 app.UseAuthentication();    // legge il JWT e popola il campo user
 app.UseRateLimiter();       // applica il rate limiting
@@ -237,37 +274,35 @@ app.UseMiddleware<LogEnricherMiddleware>();             // esegue il middleware
 app.MapControllers().RequireRateLimiting("Default");    // esegue il controller e l'action, e assegna Default come politica di rate limiting
 
 Log.Information("C# API is running...");
-Log.Information($"Using connection string: {connectionString}");
+// Log.Information($"Using connection string: {connectionString}");
 Log.Information($"Environment: {builder.Environment.EnvironmentName}");
 
 
-// --- se in modalita developement, aggiorna il database con la rispettiva migrazione ---
-if(app.Environment.IsDevelopment())
-{
-    // --- MIGRAZIONE AUTOMATICA DEL DATABASE ---
-    using (var scope = app.Services.CreateScope())
-    {
-        var services = scope.ServiceProvider;
-        try
-        {
-            var context = services.GetRequiredService<GestioLanContext>();
 
-            // Questo comando applica le migrazioni pendenti. 
-            // Se il DB non esiste, lo crea.
-            if (context.Database.GetPendingMigrations().Any())
-                {
-                Log.Information("Applicazione migrazioni in corso...");
-                context.Database.Migrate();
-                Log.Information("Database aggiornato con successo!");
-            }
-        }
-        catch (Exception ex)
-        {
-            var logger = services.GetRequiredService<ILogger<Program>>();
-            Log.Error(ex, "Si è verificato un errore durante la migrazione del database.");
+// --- MIGRAZIONE AUTOMATICA DEL DATABASE ---
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<GestioLanContext>();
+
+        // Questo comando applica le migrazioni pendenti. 
+        // Se il DB non esiste, lo crea.
+        if (context.Database.GetPendingMigrations().Any())
+            {
+            Log.Information("Applicazione migrazioni in corso...");
+            context.Database.Migrate();
+            Log.Information("Database aggiornato con successo!");
         }
     }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        Log.Error(ex, "Si è verificato un errore durante la migrazione del database.");
+    }
 }
+
 
 
 app.Run();

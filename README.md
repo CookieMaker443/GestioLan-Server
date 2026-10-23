@@ -84,7 +84,11 @@ localhost:5069/swagger/index.html
 */swagger/index.html se sei in Developement mode, e vuoi testare l api da browser*
 
 ## IMPORTANTE
-normalmente i due container del database e dell api vengono aggiornati in maniera parallela per evitare di avere inconsistenze, se pero tuttavia, per qualche motivo particolare, decidete di usare l'api con container di mariadb totalmente vergine, se l'api è in modalita Developement, essa aggiornerà il database alle ultime migrazioni.
+Normalmente i due container verranno buildati parallelamente, quindi l'API verrà deployata con il DB aggiornato all ultima migrazione, chi userà questo database si troverà in una delle due situazioni: `scarichi i container per la prima volta` oppure `aggiorni i container con docker pull`
+ciascuno dei due casi mantiene il sistema aggiornato:
+- nel primo caso, se `scarichi i container per la prima volta`, ti ritroverai il database vuoto e buildato con le ultime migrazioni, piu la tabella di entity framework che gestisce le varie migrazioni totalmente aggiornata, quindi l'api userà correttamente il database, questo perche il container viene rilasciato con due script SQL, uno  per creare il database e l'altro per aggiornare la tabella delle ultimemigrazioni, e questi script vengono eseguiti SOLO UNA VOLTA, durante la creazione del contaienr
+- nel secondo caso, quando `aggiorni i container` con `docker pull`, (se nelle versioni piu recenti è stato aggiornato anche il database) il database esistente si ritroverà ad essere piu indietro con le migrazioni rispetto all'api. 
+Il container pullato del database avrà anche esso i 2 script SQl, che però NON verranno eseguiti, perche in questo caso il container esisteva gia e non era il suo primo avvio, quindi sarà l'api stessa a rilevare che il database è piu indietro, e all'avvio l'api applicherà al db le migrazioni mancanti (aggiornando eventuali record esistenti per mantenere la consistenza)
 
 
 ## Feature da sviluppare in futuro ##
