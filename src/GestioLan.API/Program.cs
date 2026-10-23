@@ -16,6 +16,7 @@ using GestioLan.API.Services.Categories;                // Per ICategoryService 
 using GestioLan.API.Services.Images;                    // Per IImageService e ImageService
 using GestioLan.API.Services.Users;                     // Per IUserService e UserService
 using GestioLan.API.Services.Items;                     // Per IItemService e ItemService
+using GestioLan.API.Services.QuantityUnit;              // Per IQuantityUnitService e QuantityUnitService
 using GestioLan.API.Services.Metadata;
 using System.Reflection;                                // per l'assembly
 using Plugins.Shared;                                   //per IMetadataProvider
@@ -129,6 +130,7 @@ builder.Services.AddScoped<IImageService, ImageService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<IMetadataService, MetadataService>();
+builder.Services.AddScoped<IQuantityUnitService, QuantityUnitService>();
 
 // --- servizi necessari per loggare bene con le info degli utenti
 builder.Services.AddHttpContextAccessor();

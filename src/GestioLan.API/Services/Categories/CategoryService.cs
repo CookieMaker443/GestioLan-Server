@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 using GestioLan.API.Models;
 
 namespace GestioLan.API.Services.Categories;
@@ -8,10 +9,29 @@ public class CategoryService : ICategoryService
     private readonly GestioLanContext _context;
     private readonly ILogger<CategoryService> _logger;
 
+    // Formato colore: #RRGGBB oppure #RRGGBBAA (come il check constraint del DB)
+    private static readonly Regex ColorRegex = new(@"^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$", RegexOptions.Compiled);
+    private const string DefaultColor = "#FFFFFF";
+
+
+
     public CategoryService(GestioLanContext context, ILogger<CategoryService> logger)
     {
         _logger = logger;
         _context = context;
+    }
+
+    // Normalizza il colore (trim + maiuscolo) e lancia un errore se il formato è invalido
+    private static string NormalizeColor(string? color)
+    {
+        if (string.IsNullOrWhiteSpace(color))
+            return DefaultColor;                  // nessun colore → bianco
+
+        color = color.Trim().ToUpperInvariant();
+        if (!ColorRegex.IsMatch(color))
+            throw new ArgumentException("Invalid color format. Use #RRGGBB or #RRGGBBAA.");
+
+        return color;
     }
 
     public async Task<IEnumerable<Category>> GetAllCategoriesAsync()
@@ -23,10 +43,13 @@ public class CategoryService : ICategoryService
 
     }
 
-    public async Task<Category> AddCategoryAsync(string nome)
+    public async Task<Category> AddCategoryAsync(string nome,  string? color)
     {
         // 1. Conta quanti record ci sono
         _logger.LogInformation("Attempting to add category: {Name}", nome);
+
+        // Valida subito il colore, prima di fare query al DB
+        string validColor = NormalizeColor(color);
 
         var count = await _context.Categories.CountAsync();
         if (count >= 31) 
@@ -61,11 +84,17 @@ public class CategoryService : ICategoryService
         }
         try 
         {
-            var category = new Category { IdCategory = maxId, NameCategory = nome };
+            var category = new Category 
+            { 
+                IdCategory = maxId, 
+                NameCategory = nome,
+                CategoryColor = validColor
+            };
             _context.Categories.Add(category);
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Category created successfully: ID {IdCategory}, Name {Name}", category.IdCategory, category.NameCategory);
+            _logger.LogInformation("Category created successfully: ID {IdCategory}, Name {Name}, Color {Color}", 
+                category.IdCategory, category.NameCategory, category.CategoryColor);
             return category;
         }
 
@@ -96,6 +125,9 @@ public class CategoryService : ICategoryService
 
         }
 
+        // Valida e normalizza il colore
+        string newColor = NormalizeColor(category.CategoryColor);
+
         // Controlla se esiste già un'altra categoria con lo stesso nome
         if (await _context.Categories.AnyAsync(c => c.NameCategory == category.NameCategory && c.IdCategory != id))
         {
@@ -118,13 +150,25 @@ public class CategoryService : ICategoryService
             throw new KeyNotFoundException();
         }
 
+        // Controlla cosa è cambiato: se niente, non ha senso salvare
+        bool nameChanged = catInDb.NameCategory != category.NameCategory;
+        bool colorChanged = catInDb.CategoryColor != newColor;
+        if (!nameChanged && !colorChanged)
+        {
+            _logger.LogWarning("Update rejected: no changes for category ID {Id}", id);
+            throw new ArgumentException("No changes to apply: name and color are the same.");
+        }
+
         string oldName = catInDb.NameCategory;// Salva il vecchio nome per il messaggio di risposta
+        string ordColor = catInDb.CategoryColor;
         catInDb.NameCategory = category.NameCategory;
+        catInDb.CategoryColor = newColor;
 
         try 
         {
             await _context.SaveChangesAsync();
-            _logger.LogInformation("Category ID {Id} renamed from '{OldName}' to '{NewName}'", id, oldName, category.NameCategory);
+            _logger.LogInformation("Category ID {Id} renamed from '{OldName}' -> '{NewName}', color {OldColor} -> {NewColor}",
+                id, oldName, category.NameCategory, oldColor, newColor);
             return $"Category `{id}` renamed from '{oldName}' to '{category.NameCategory}'";
         }
         catch (DbUpdateException ex)

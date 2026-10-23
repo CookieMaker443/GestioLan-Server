@@ -30,16 +30,16 @@ public class CategoriesController : ControllerBase
     // inserisci una categoria
     [Authorize(Policy = "AdminOnly")] // Solo gli admin possono accedere a questo endpoint
     [HttpPost("AddCategory")]
-    public async Task<ActionResult<Category>> AddCategory([FromBody] string nome)
+    public async Task<ActionResult<Category>> AddCategory([FromBody] Category category)
     {
-        if (string.IsNullOrWhiteSpace(nome))
+        if (category == null || string.IsNullOrWhiteSpace(category.NameCategory))
         {
             return BadRequest("Category name cannot be empty.");
         }
 
         try
         {
-            var category = await _categoryService.AddCategoryAsync(nome);
+            var category = await _categoryService.AddCategoryAsync(category.NameCategory, category.CategoryColor);
             return Ok(category);
         }
         catch (ArgumentException ex)

@@ -1,10 +1,5 @@
 ## Architettura repo
-- [ ] Aggiungere un rate limiting, (differenziandolo per l endpoint della AI)
 - [ ] implementare una chat con un LLM (potendolo cambiare)(come uno locale con Ollama o eventualente con Claude o OpenAI) e i suoi endopoint
-
-
-## Categorie
-- [ ] Aggiungere una colonna per un valore esadecimale per un colore, da usare poi nel client
 
 
 ## Database
@@ -29,6 +24,3 @@ register protetto da jwt
 ## Metadata provider
 - [ ] provare a fetchare immagini anche doppo il PUT degli item (con modifiche) 
 
-
-## Quantity Type
-- [ ] Aggiungere una tabella che contiene solo i tipi di quantità degli item (item, chilogrammi, grammi, ecc)

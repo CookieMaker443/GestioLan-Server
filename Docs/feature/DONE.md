@@ -1,9 +1,11 @@
 ## Architettura repo
 - [X] Refactorare la repo e l architettura del codice seguendo la mappa lavorata assieme a Claude per una migliore struttura e ciomprensione
 - [X] aggiungere le interfacce come "layer" tra le classi controller e le API che riceveranno con DI (Dependency Injection) l'oggetto interfaccia (implementata dal con troller) come service da Program.cs per permettere dei test con controller (che non toccano il db ma usano l'interfaccia)
+- [X] Aggiungere un rate limiting, (differenziandolo per l endpoint della AI)
 
 ## Categorie
 - [X] Se un user toglie una categoria, il db trova gli item che hanno quella categoria, e toglie il bit di quella cat da essi
+- [X] Aggiungere una colonna per un valore esadecimale per un colore, da usare poi nel client
 
 ## Database
 - [X] importare SOLO i dati nella tabella delle migrazioni
@@ -30,3 +32,7 @@
 
 ## Metadata provider
 - [X] a plugin stabili, provare a inserire metodi per fetchare nome, descrizione, se i plugin non possono provvedere , fanno return null
+
+
+## Quantity Type
+- [X] Aggiungere una tabella che contiene solo i tipi di quantità degli item (item, chilogrammi, grammi, ecc)
