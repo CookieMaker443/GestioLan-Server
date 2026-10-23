@@ -1,9 +1,4 @@
 /*M!999999\- enable the sandbox mode */ 
--- MariaDB dump 10.19-12.2.2-MariaDB, for Linux (x86_64)
---
--- Host: 127.0.0.1    Database: GestioLAN
--- ------------------------------------------------------
--- Server version	11.6.2-MariaDB-ubu2404-log
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -16,11 +11,6 @@
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*M!100616 SET @OLD_NOTE_VERBOSITY=@@NOTE_VERBOSITY, NOTE_VERBOSITY=0 */;
 
---
--- Dumping data for table `__EFMigrationsHistory`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
 LOCK TABLES `__EFMigrationsHistory` WRITE;
 /*!40000 ALTER TABLE `__EFMigrationsHistory` DISABLE KEYS */;
 INSERT INTO `__EFMigrationsHistory` VALUES
@@ -35,11 +25,10 @@ INSERT INTO `__EFMigrationsHistory` VALUES
 ('20260226165656_AddIsAdmin','9.0.11'),
 ('20260309124129_UpdateItemTable','9.0.11'),
 ('20260309154700_ImageTableLastModified','9.0.11'),
-('20260523215502_AddBarcodeColumn','9.0.11');
+('20260523215502_AddBarcodeColumn','9.0.11'),
+('20261023130420_AddCategoryColorAndQuantityUnit','9.0.11');
 /*!40000 ALTER TABLE `__EFMigrationsHistory` ENABLE KEYS */;
 UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -49,4 +38,3 @@ SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*M!100616 SET NOTE_VERBOSITY=@OLD_NOTE_VERBOSITY */;
 
--- Dump completed on 2026-05-24  0:20:05
